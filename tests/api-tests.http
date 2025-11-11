@@ -1,0 +1,519 @@
+### RiseUP APIs - Test Suite (v2.0)
+### Base URL: http://localhost:5001
+### Updated for new routes architecture with health checks and shorter endpoints
+
+### Variables (Update these with actual usernames for testing)
+@baseUrl = http://localhost:5001
+@leetcodeUser = mukrramkhan37
+@githubUser = example_user
+@gfgUser = mohammad_mokaram_khan
+@codeforcesUser = mukrramkhan37
+@codechefUser = mukrramkhan37
+@hackerrankUser = mukrramkhan37
+
+###############################################################################
+# 0. HEALTH & STATUS ENDPOINTS - NEW!
+###############################################################################
+
+### Get API Information
+GET {{baseUrl}}/
+Accept: application/json
+
+###
+
+### Basic Health Check
+GET {{baseUrl}}/api/v1/health
+Accept: application/json
+
+###
+
+### Detailed Server Status
+GET {{baseUrl}}/api/v1/status
+Accept: application/json
+
+###
+
+### List All Supported Platforms
+GET {{baseUrl}}/api/v1/platforms
+Accept: application/json
+
+###############################################################################
+# 1. COMBINED ENDPOINTS - Fetch from multiple platforms
+###############################################################################
+
+### Fetch All Platforms Data (Aggregate Endpoint)
+POST {{baseUrl}}/api/v1/profiles/aggregate
+Content-Type: application/json
+
+{
+  "username": "{{leetcodeUser}}"
+}
+
+###
+
+### Fetch All Platforms with Different Usernames
+POST {{baseUrl}}/api/v1/profiles/aggregate
+Content-Type: application/json
+
+{
+  "platformUsernames": {
+    "leetcode": "{{leetcodeUser}}",
+    "github": "{{githubUser}}",
+    "codeforces": "{{codeforcesUser}}",
+    "codechef": "{{codechefUser}}",
+    "hackerrank": "{{hackerrankUser}}",
+    "geeksforgeeks": "{{gfgUser}}"
+  }
+}
+
+###
+
+### Test Aggregate Endpoint with Missing Username (Error Case)
+POST {{baseUrl}}/api/v1/profiles/aggregate
+Content-Type: application/json
+
+{
+}
+
+###############################################################################
+# 2. LEETCODE - LeetCode profile and problem-solving data
+###############################################################################
+
+### Fetch LeetCode Profile
+POST {{baseUrl}}/api/v1/platforms/leetcode/profiles
+Content-Type: application/json
+
+{
+  "username": "{{leetcodeUser}}"
+}
+
+###
+
+### Test LeetCode with Missing Username (Error Case)
+POST {{baseUrl}}/api/v1/platforms/leetcode/profiles
+Content-Type: application/json
+
+{
+}
+
+###
+
+### Test LeetCode with Empty String Username (Error Case)
+POST {{baseUrl}}/api/v1/platforms/leetcode/profiles
+Content-Type: application/json
+
+{
+  "username": ""
+}
+
+###############################################################################
+# 3. GITHUB - GitHub profile, repositories, and contributions
+###############################################################################
+
+### Fetch GitHub Profile
+POST {{baseUrl}}/api/v1/platforms/github/profiles
+Content-Type: application/json
+
+{
+  "username": "{{githubUser}}"
+}
+
+###
+
+### Test GitHub with Famous User (Linus Torvalds)
+POST {{baseUrl}}/api/v1/platforms/github/profiles
+Content-Type: application/json
+
+{
+  "username": "torvalds"
+}
+
+###
+
+### Test GitHub with Missing Username (Error Case)
+POST {{baseUrl}}/api/v1/platforms/github/profiles
+Content-Type: application/json
+
+{
+}
+
+###############################################################################
+# 4. GEEKSFORGEEKS (GFG) - GFG profile and problem-solving data
+###############################################################################
+
+### Fetch GeeksforGeeks Profile
+POST {{baseUrl}}/api/v1/platforms/geeksforgeeks/profiles
+Content-Type: application/json
+
+{
+  "username": "{{gfgUser}}"
+}
+
+###
+
+### Test GeeksforGeeks with Missing Username (Error Case)
+POST {{baseUrl}}/api/v1/platforms/geeksforgeeks/profiles
+Content-Type: application/json
+
+{
+}
+
+###
+
+### Test GeeksforGeeks with Whitespace Username
+POST {{baseUrl}}/api/v1/platforms/geeksforgeeks/profiles
+Content-Type: application/json
+
+{
+  "username": "  {{gfgUser}}  "
+}
+
+###############################################################################
+# 5. CODEFORCES - Codeforces profile, ratings, and contest data
+###############################################################################
+
+### Fetch Codeforces Profile
+POST {{baseUrl}}/api/v1/platforms/codeforces/profiles
+Content-Type: application/json
+
+{
+  "username": "{{codeforcesUser}}"
+}
+
+###
+
+### Test Codeforces with Invalid Username (Error Case)
+POST {{baseUrl}}/api/v1/platforms/codeforces/profiles
+Content-Type: application/json
+
+{
+  "username": "nonexistent_user_12345"
+}
+
+###
+
+### Test Codeforces with Famous User
+POST {{baseUrl}}/api/v1/platforms/codeforces/profiles
+Content-Type: application/json
+
+{
+  "username": "tourist"
+}
+
+###############################################################################
+# 6. CODECHEF - CodeChef profile and contest data
+###############################################################################
+
+### Fetch CodeChef Profile
+POST {{baseUrl}}/api/v1/platforms/codechef/profiles
+Content-Type: application/json
+
+{
+  "username": "{{codechefUser}}"
+}
+
+###
+
+### Test CodeChef with Whitespace in Username
+POST {{baseUrl}}/api/v1/platforms/codechef/profiles
+Content-Type: application/json
+
+{
+  "username": "  {{codechefUser}}  "
+}
+
+###
+
+### Test CodeChef with Missing Username (Error Case)
+POST {{baseUrl}}/api/v1/platforms/codechef/profiles
+Content-Type: application/json
+
+{
+}
+
+###############################################################################
+# 7. HACKERRANK - HackerRank profile, badges, and certifications
+###############################################################################
+
+### Fetch HackerRank Profile
+POST {{baseUrl}}/api/v1/platforms/hackerrank/profiles
+Content-Type: application/json
+
+{
+  "username": "{{hackerrankUser}}"
+}
+
+###
+
+### Test HackerRank with Missing Username (Error Case)
+POST {{baseUrl}}/api/v1/platforms/hackerrank/profiles
+Content-Type: application/json
+
+{
+}
+
+###
+
+### Test HackerRank with Empty Username (Error Case)
+POST {{baseUrl}}/api/v1/platforms/hackerrank/profiles
+Content-Type: application/json
+
+{
+  "username": ""
+}
+
+###############################################################################
+# 8. ERROR HANDLING & EDGE CASES
+###############################################################################
+
+### Test with Invalid Endpoint (Should return 404 with helpful message)
+POST {{baseUrl}}/invalid-endpoint
+Content-Type: application/json
+
+{
+  "username": "test_user"
+}
+
+###
+
+### Test with Non-Existent Route (GET method)
+GET {{baseUrl}}/nonexistent
+Accept: application/json
+
+###
+
+### Test with Special Characters in Username
+POST {{baseUrl}}/api/v1/platforms/leetcode/profiles
+Content-Type: application/json
+
+{
+  "username": "user@123#special"
+}
+
+###
+
+### Test with Very Long Username
+POST {{baseUrl}}/api/v1/platforms/github/profiles
+Content-Type: application/json
+
+{
+  "username": "this_is_a_very_long_username_that_probably_does_not_exist_in_any_platform_12345"
+}
+
+###
+
+### Test with Numeric Only Username
+POST {{baseUrl}}/api/v1/platforms/leetcode/profiles
+Content-Type: application/json
+
+{
+  "username": "12345"
+}
+
+###
+
+### Test with Unicode Characters
+POST {{baseUrl}}/api/v1/platforms/leetcode/profiles
+Content-Type: application/json
+
+{
+  "username": "用户名"
+}
+
+###
+
+### Test Aggregate Endpoint with Non-Existent User Across All Platforms
+POST {{baseUrl}}/api/v1/profiles/aggregate
+Content-Type: application/json
+
+{
+  "username": "definitely_not_a_real_user_12345"
+}
+
+###############################################################################
+# 9. CONCURRENT REQUESTS - Test performance with parallel requests
+###############################################################################
+
+### Concurrent Test 1 - LeetCode
+POST {{baseUrl}}/api/v1/platforms/leetcode/profiles
+Content-Type: application/json
+
+{
+  "username": "{{leetcodeUser}}"
+}
+
+###
+
+### Concurrent Test 2 - GitHub
+POST {{baseUrl}}/api/v1/platforms/github/profiles
+Content-Type: application/json
+
+{
+  "username": "{{githubUser}}"
+}
+
+###
+
+### Concurrent Test 3 - GeeksforGeeks
+POST {{baseUrl}}/api/v1/platforms/geeksforgeeks/profiles
+Content-Type: application/json
+
+{
+  "username": "{{gfgUser}}"
+}
+
+###
+
+### Concurrent Test 4 - Codeforces
+POST {{baseUrl}}/api/v1/platforms/codeforces/profiles
+Content-Type: application/json
+
+{
+  "username": "{{codeforcesUser}}"
+}
+
+###############################################################################
+# 10. PERFORMANCE & STRESS TESTING
+###############################################################################
+
+### Performance Test - Fetch All Platforms (Aggregate Endpoint)
+# Note: This fetches from all platforms simultaneously
+POST {{baseUrl}}/api/v1/profiles/aggregate
+Content-Type: application/json
+
+{
+  "username": "{{leetcodeUser}}"
+}
+
+###
+
+### Performance Test - Individual Fast Platform (GitHub)
+POST {{baseUrl}}/api/v1/platforms/github/profiles
+Content-Type: application/json
+
+{
+  "username": "{{githubUser}}"
+}
+
+###
+
+### Performance Test - Individual Slower Platform (GeeksforGeeks)
+POST {{baseUrl}}/api/v1/platforms/geeksforgeeks/profiles
+Content-Type: application/json
+
+{
+  "username": "{{gfgUser}}"
+}
+
+###############################################################################
+# 11. ENDPOINT COMPARISON - New vs Legacy
+###############################################################################
+
+### LeetCode Profile Endpoint
+POST {{baseUrl}}/api/v1/platforms/leetcode/profiles
+Content-Type: application/json
+
+{
+  "username": "{{leetcodeUser}}"
+}
+
+###
+
+### Aggregate Profiles Endpoint
+POST {{baseUrl}}/api/v1/profiles/aggregate
+Content-Type: application/json
+
+{
+  "username": "{{leetcodeUser}}"
+}
+
+###############################################################################
+# 12. VALIDATION TESTING
+###############################################################################
+
+### Test All Platforms with Same User (Consistency Check)
+POST {{baseUrl}}/api/v1/profiles/aggregate
+Content-Type: application/json
+
+{
+  "username": "{{leetcodeUser}}"
+}
+
+###
+
+### Test Individual Platforms Match Combined Result - LeetCode
+POST {{baseUrl}}/api/v1/platforms/leetcode/profiles
+Content-Type: application/json
+
+{
+  "username": "{{leetcodeUser}}"
+}
+
+###
+
+### Test Individual Platforms Match Combined Result - GitHub
+POST {{baseUrl}}/api/v1/platforms/github/profiles
+Content-Type: application/json
+
+{
+  "username": "{{githubUser}}"
+}
+
+###############################################################################
+# NOTES & INSTRUCTIONS
+###############################################################################
+#
+# API v1 ENDPOINTS:
+# ✨ Health check: GET /api/v1/health
+# ✨ System status: GET /api/v1/status
+# ✨ Platform list: GET /api/v1/platforms
+# ✨ Single platform: POST /api/v1/platforms/:platform/profiles
+# ✨ Aggregate profiles: POST /api/v1/profiles/aggregate
+# ✨ API documentation: GET /
+#
+# SUPPORTED PLATFORMS:
+# - leetcode, codeforces, codechef, geeksforgeeks, hackerrank, github
+#
+# SETUP:
+# 1. Update the @variables at the top with real usernames
+# 2. Ensure server is running: npm start
+# 3. Check .env file for required tokens:
+#    - GITHUB_TOKEN (required for GitHub API)
+#    - CODECHEF_COOKIE (optional, for better reliability)
+#
+# USAGE:
+# - Click "Send Request" above each ### section
+# - Or use keyboard shortcut (Ctrl/Cmd + Alt + R in VS Code)
+# - Run tests in order or individually
+# - Use REST Client extension for VS Code for best experience
+#
+# ENDPOINT STRUCTURE:
+# - Health endpoints: /api/v1/health, /api/v1/status
+# - Platform list: /api/v1/platforms (GET)
+# - Single platform: /api/v1/platforms/{platform}/profiles (POST)
+# - Aggregate: /api/v1/profiles/aggregate (POST)
+#
+# EXPECTED BEHAVIOR:
+# - Health checks should return instantly (< 100ms)
+# - Individual platforms: 1-5 seconds (varies by platform)
+# - Aggregate endpoint: 5-15 seconds (all platforms in parallel)
+# - GitHub is typically fastest (< 1 second with token)
+# - GeeksforGeeks and CodeChef may be slower (3-5 seconds)
+#
+# ERROR RESPONSES:
+# - 400: Bad Request (missing username or invalid platform)
+# - 404: Not Found (invalid endpoint)
+# - 500: Internal Server Error (platform error or network issue)
+#
+# RATE LIMITS:
+# - GitHub: 5000 req/hour with token, 60 without
+# - Other platforms: Vary by platform, space out requests if needed
+# - Aggregate endpoint counts as 1 request per platform
+#
+# TIPS:
+# - Use GET /api/v1/platforms to see all supported platforms
+# - Use GET /api/v1/status to check server health and memory usage
+# - Check logs/ directory for detailed request logs
+# - All requests are logged automatically (see logs/error-*.log)
+#
+###############################################################################
