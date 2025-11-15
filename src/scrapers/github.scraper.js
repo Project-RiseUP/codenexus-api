@@ -1,13 +1,19 @@
 const axios = require("axios");
 require("dotenv").config();
+const { logger } = require("../utils/logger");
 
 const GITHUB_GRAPHQL_API = "https://api.github.com/graphql";
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
 
+// Check if token is loaded
+if (!GITHUB_TOKEN) {
+  logger.error("GITHUB_TOKEN is missing from .env file!");
+}
+
 // ------------------ GraphQL Query ------------------
 const generateGraphQLQuery = (username) => `
 query {
-  user(login: "${username}") {
+  user(login: "${username.trim()}") {
     name
     login
     avatarUrl
@@ -22,7 +28,7 @@ query {
       first: 50,
       ownerAffiliations: OWNER,
       isFork: false,
-      orderBy: {field: PUSHED_AT, direction: DESC}
+      orderBy: { field: PUSHED_AT, direction: DESC }
     ) {
       totalCount
       nodes {
@@ -53,17 +59,10 @@ query {
         }
       }
     }
-    # New Achievements API
-    achievements {
-      nodes {
-        title
-        description
-      }
-    }
   }
 }`;
 
-// ------------------ Badges Generator ------------------
+// ------------------ Badge Generator ------------------
 function getBadges(user, repos, stars) {
   const badges = [];
 
@@ -81,8 +80,10 @@ function getBadges(user, repos, stars) {
 async function fetchGitHubData(username) {
   if (!username) return { error: "GitHub username is required" };
 
+  username = username.trim();
+
   try {
-    const graphQLResponse = await axios.post(
+    const response = await axios.post(
       GITHUB_GRAPHQL_API,
       { query: generateGraphQLQuery(username) },
       {
@@ -93,8 +94,20 @@ async function fetchGitHubData(username) {
       }
     );
 
-    const user = graphQLResponse.data?.data?.user;
-    if (!user) return { error: "GitHub user not found" };
+    // Debug raw GitHub response
+    const rawData = response.data;
+    if (rawData.errors) {
+      logger.error(`GitHub API Error for ${username}: ${JSON.stringify(rawData.errors)}`);
+    }
+
+    const user = rawData?.data?.user;
+    if (!user) {
+      logger.error(`GitHub returned null user for: ${username}`);
+      return {
+        error: "GitHub user not found",
+        rawResponse: rawData,
+      };
+    }
 
     // -------- Language Stats --------
     const langStats = {};
@@ -129,12 +142,6 @@ async function fetchGitHubData(username) {
       0
     );
 
-    // -------- Achievements --------
-    const achievements = (user.achievements?.nodes || []).map((a) => ({
-      title: a.title,
-      description: a.description,
-    }));
-
     // -------- Final Schema --------
     return {
       platform: "github",
@@ -154,11 +161,13 @@ async function fetchGitHubData(username) {
         repositories: totalRepos,
         stars: totalStars,
         contributions: {
-          total: user.contributionsCollection.contributionCalendar.totalContributions,
+          total:
+            user.contributionsCollection.contributionCalendar.totalContributions,
           commits: user.contributionsCollection.totalCommitContributions,
           pullRequests: user.contributionsCollection.totalPullRequestContributions,
           issues: user.contributionsCollection.totalIssueContributions,
-          repoContributions: user.contributionsCollection.totalRepositoryContributions,
+          repoContributions:
+            user.contributionsCollection.totalRepositoryContributions,
         },
         activity: {
           contributionsByDay,
@@ -167,7 +176,6 @@ async function fetchGitHubData(username) {
         languages: langStats,
       },
       badges: getBadges(user, totalRepos, totalStars),
-      achievements,
       repositories: user.repositories.nodes.map((repo) => ({
         name: repo.name,
         description: repo.description,
@@ -180,7 +188,11 @@ async function fetchGitHubData(username) {
       })),
     };
   } catch (err) {
-    return { error: "Internal server error", detail: err.message };
+    logger.error(`GitHub API Request Failed for ${username}: ${err.response?.data ? JSON.stringify(err.response.data) : err.message}`);
+    return {
+      error: "Internal server error",
+      detail: err.response?.data || err.message,
+    };
   }
 }
 
