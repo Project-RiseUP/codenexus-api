@@ -1,14 +1,13 @@
 const axios = require("axios");
 require("dotenv").config();
+const { logger } = require("../utils/logger");
 
 const GITHUB_GRAPHQL_API = "https://api.github.com/graphql";
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
 
 // Check if token is loaded
 if (!GITHUB_TOKEN) {
-  console.error("❌ GITHUB_TOKEN is missing from .env file!");
-} else {
-  console.log("✅ GitHub Token Loaded:", GITHUB_TOKEN.slice(0, 8) + "...");
+  logger.error("GITHUB_TOKEN is missing from .env file!");
 }
 
 // ------------------ GraphQL Query ------------------
@@ -82,7 +81,6 @@ async function fetchGitHubData(username) {
   if (!username) return { error: "GitHub username is required" };
 
   username = username.trim();
-  console.log(`🚀 Fetching GitHub data for: ${username}`);
 
   try {
     const response = await axios.post(
@@ -99,12 +97,12 @@ async function fetchGitHubData(username) {
     // Debug raw GitHub response
     const rawData = response.data;
     if (rawData.errors) {
-      console.error("⚠️ GitHub API Error:", rawData.errors);
+      logger.error(`GitHub API Error for ${username}: ${JSON.stringify(rawData.errors)}`);
     }
 
     const user = rawData?.data?.user;
     if (!user) {
-      console.error("❌ GitHub returned null user for:", username);
+      logger.error(`GitHub returned null user for: ${username}`);
       return {
         error: "GitHub user not found",
         rawResponse: rawData,
@@ -190,7 +188,7 @@ async function fetchGitHubData(username) {
       })),
     };
   } catch (err) {
-    console.error("❌ GitHub API Request Failed:", err.response?.data || err.message);
+    logger.error(`GitHub API Request Failed for ${username}: ${err.response?.data ? JSON.stringify(err.response.data) : err.message}`);
     return {
       error: "Internal server error",
       detail: err.response?.data || err.message,
