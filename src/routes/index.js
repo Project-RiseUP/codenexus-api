@@ -12,7 +12,7 @@
  * - /api/v1/platforms/:platform/profiles  - Get profile from specific platform
  * - /api/v1/profiles/aggregate            - Get profiles from all platforms
  */
-
+require('dotenv').config();
 const express = require('express');
 const router = express.Router();
 

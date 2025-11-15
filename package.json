@@ -34,6 +34,7 @@
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
     "graphql": "^16.11.0",
+    "kuler": "^2.0.0",
     "p-limit": "^7.2.0",
     "playwright": "^1.56.1",
     "puppeteer": "^24.27.0",
