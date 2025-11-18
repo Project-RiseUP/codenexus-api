@@ -19,6 +19,30 @@ query getUserProfile($username: String!) {
   }
 }`;
 
+const BADGES_QUERY = `
+query userBadges($username: String!) {
+  matchedUser(username: $username) {
+    badges {
+      id
+      name
+      shortName
+      displayName
+      icon
+      hoverText
+      medal {
+        slug
+        config {
+          iconGif
+          iconGifBackground
+        }
+      }
+      creationDate
+      category
+    }
+  }
+}
+`;
+
 const RECENT_AC_QUERY = `
 query recentAcSubmissions($username: String!) {
   recentAcSubmissionList(username: $username) {
@@ -100,14 +124,54 @@ async function fetchLeetCodeData(username) {
       }
     }
 
+    // Step 4: Badges
+    let badges = [];
+    
+    try {
+      const badgesPayload = {
+        query: BADGES_QUERY,
+        variables: { username },
+        operationName: 'userBadges'  // Important!
+      };
+
+      const badgesRes = await axios.post(LEETCODE_GRAPHQL, badgesPayload, { headers });
+      
+      if (badgesRes.data?.errors) {
+        console.error('GraphQL Badges Error:', JSON.stringify(badgesRes.data.errors));
+      } else {
+        const matchedUser = badgesRes.data?.data?.matchedUser;
+        
+        if (matchedUser) {
+          const earnedBadges = (matchedUser.badges || [])
+            .filter(badge => badge.creationDate)
+            .map(badge => ({
+              id: badge.id,
+              name: badge.name || badge.displayName || badge.shortName,
+              displayName: badge.displayName,
+              icon: badge.icon,
+              category: badge.category || 'Other',
+              creationDate: badge.creationDate,
+              hoverText: badge.hoverText
+            }));
+          
+          badges = earnedBadges;
+          console.log(`Successfully fetched ${badges.length} badges for ${username}`);
+        }
+      }
+    } catch (badgeError) {
+      console.error('Badge fetch error:', badgeError.message);
+    }
+
     return {
       username,
       problemsSolved,
       dailyProblemsSolved,
       recentProblemsByDay,
       topicWiseStats,
+      badges,
     };
   } catch (err) {
+    console.error('Full error:', err.response?.data || err.message);
     return { error: 'Internal server error', detail: err.message };
   }
 }
