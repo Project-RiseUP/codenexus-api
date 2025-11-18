@@ -88,6 +88,7 @@ if (platform === "github") {
     recentProblemsByDay: data?.recentProblemsByDay || {},
     topicWiseStats: data?.topicWiseStats || {},
     additionalInfo: data?.additionalInfo || data?.extras || {},
+    badges:data?.badges || [],
     error: data?.error,
   };
 }
