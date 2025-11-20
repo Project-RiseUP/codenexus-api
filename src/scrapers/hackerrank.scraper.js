@@ -6,7 +6,6 @@
 const axios = require('axios');
 const cheerio = require('cheerio');
 const dayjs = require('dayjs');
-const { wrapper } = require('axios-cookiejar-support');
 const tough = require('tough-cookie');
 const { chromium } = require('playwright');
 const fs = require('fs');
@@ -108,6 +107,13 @@ async function loginAndRefreshCookies({ email, password, cookieJarPath, headless
   return true;
 }
 
+/**
+ * Create axios instance with cookie jar support
+ * Manually implements cookie jar functionality using axios interceptors
+ * @param {tough.CookieJar} jar - Cookie jar instance
+ * @param {Object} options - Configuration options
+ * @returns {axios.AxiosInstance} Axios instance with cookie support
+ */
 async function buildAxiosWithJar(jar, { timeoutMs, authToken }) {
   const headers = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36',
@@ -115,15 +121,52 @@ async function buildAxiosWithJar(jar, { timeoutMs, authToken }) {
     'Accept-Language': 'en-US,en;q=0.9',
   };
   if (authToken) headers.Authorization = `Bearer ${authToken}`;
-  return wrapper(axios.create({
+
+  const instance = axios.create({
     baseURL: HACKERRANK_BASE,
     timeout: timeoutMs,
     withCredentials: true,
-    jar,
     headers,
     maxRedirects: 5,
     validateStatus: (s) => s >= 200 && s < 400,
-  }));
+  });
+
+  // Request interceptor: Add cookies from jar to request headers
+  instance.interceptors.request.use(async (config) => {
+    const url = config.url ? (config.baseURL || '') + config.url : config.baseURL || HACKERRANK_BASE;
+    const cookies = await jar.getCookiesSync(url);
+    if (cookies.length > 0) {
+      const cookieString = cookies.map(cookie => cookie.cookieString()).join('; ');
+      config.headers.Cookie = cookieString;
+    }
+    return config;
+  });
+
+  // Response interceptor: Extract cookies from response and store in jar
+  instance.interceptors.response.use(
+    (response) => {
+      const url = response.config.url ? (response.config.baseURL || '') + response.config.url : response.config.baseURL || HACKERRANK_BASE;
+      const setCookieHeaders = response.headers['set-cookie'];
+      if (setCookieHeaders) {
+        for (const cookieHeader of setCookieHeaders) {
+          try {
+            const cookie = tough.Cookie.parse(cookieHeader);
+            if (cookie) {
+              jar.setCookieSync(cookie, url);
+            }
+          } catch (err) {
+            // Ignore cookie parsing errors
+          }
+        }
+      }
+      return response;
+    },
+    (error) => {
+      return Promise.reject(error);
+    }
+  );
+
+  return instance;
 }
 
 async function fetchOnce(username, axiosInstance, { verbose }) {
