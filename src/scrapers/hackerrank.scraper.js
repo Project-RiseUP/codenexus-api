@@ -1,12 +1,17 @@
-// fetchHackerRankData.js
-// npm i axios cheerio dayjs p-limit axios-cookiejar-support tough-cookie playwright
+/**
+ * HackerRank Scraper
+ * 
+ * Fetches HackerRank profile data including problems solved, submissions, and statistics
+ */
 const axios = require('axios');
 const cheerio = require('cheerio');
 const dayjs = require('dayjs');
 const pLimit = require('p-limit');
 const { wrapper } = require('axios-cookiejar-support');
 const tough = require('tough-cookie');
+const { chromium } = require('playwright');
 const fs = require('fs');
+const { logger } = require('../utils/logger');
 
 const HACKERRANK_BASE = 'https://www.hackerrank.com';
 
@@ -49,7 +54,6 @@ const isAuthFail = (res) => res && !res.__error && (res.status === 401 || res.st
 
 async function loginAndRefreshCookies({ email, password, cookieJarPath, headless = true }) {
   // Headless login via Playwright; writes cookies to cookieJarPath
-  const { chromium } = require('playwright');
   const browser = await chromium.launch({ headless });
   const ctx = await browser.newContext();
   const page = await ctx.newPage();
@@ -95,7 +99,7 @@ async function buildAxiosWithJar(jar, { timeoutMs, authToken }) {
 }
 
 async function fetchOnce(username, axiosInstance, { verbose }) {
-  const log = (...a) => verbose && console.log('[hackerrank]', ...a);
+  const log = (...a) => verbose && logger.info('[hackerrank]', ...a);
 
   const problemsSolved = { easy: 0, medium: 0, hard: 0, total: 0 };
   const dailyProblemsSolved = {};
@@ -171,7 +175,9 @@ async function fetchOnce(username, axiosInstance, { verbose }) {
       const html = pr.data;
       if (/Just a moment|cf-browser-verification|Cloudflare/i.test(html)) return { __authFail: true };
       const $ = cheerio.load(html);
-      if (!$('script').length) log('no scripts found on profile page');
+      if (!$('script').length) {
+        if (verbose) logger.warn('No scripts found on HackerRank profile page');
+      }
       $('script').each((i, s) => {
         const txt = $(s).html() || '';
         const m = txt.match(/window\.__INITIAL_STATE__\s*=\s*({[\s\S]*});?/);
