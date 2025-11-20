@@ -6,7 +6,6 @@
 const axios = require('axios');
 const cheerio = require('cheerio');
 const dayjs = require('dayjs');
-const pLimit = require('p-limit');
 const { wrapper } = require('axios-cookiejar-support');
 const tough = require('tough-cookie');
 const { chromium } = require('playwright');
@@ -14,6 +13,35 @@ const fs = require('fs');
 const { logger } = require('../utils/logger');
 
 const HACKERRANK_BASE = 'https://www.hackerrank.com';
+
+/**
+ * Simple concurrency limiter
+ * Limits the number of concurrent async operations
+ * @param {number} concurrency - Maximum number of concurrent operations
+ * @returns {Function} A function that wraps async operations
+ */
+function createLimiter(concurrency) {
+  let running = 0;
+  const queue = [];
+
+  const run = async (fn) => {
+    if (running >= concurrency) {
+      await new Promise(resolve => queue.push(resolve));
+    }
+    running++;
+    try {
+      return await fn();
+    } finally {
+      running--;
+      if (queue.length > 0) {
+        const next = queue.shift();
+        next();
+      }
+    }
+  };
+
+  return run;
+}
 
 function toDateStr(input) {
   if (!input) return null;
@@ -226,7 +254,7 @@ async function fetchOnce(username, axiosInstance, { verbose }) {
   const uniqueSlugs = Array.from(new Set(normalizedRecent.map(r => r.slug).filter(Boolean)));
   const toFetch = uniqueSlugs.slice(0, 40);
   if (toFetch.length) {
-    const limit = pLimit(5);
+    const limit = createLimiter(5);
     const tasks = toFetch.map(slug => limit(async () => {
       const r = await safeGet(axiosInstance, `/challenges/${encodeURIComponent(slug)}`, { headers: { Accept: 'text/html' } });
       if (!r || r.__error || !r.data) return null;
