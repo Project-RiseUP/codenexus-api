@@ -100,7 +100,14 @@ async function loginAndRefreshCookies({ email, password, cookieJarPath, headless
   for (const c of cookies) {
     const dom = c.domain.startsWith('.') ? c.domain.slice(1) : c.domain;
     const str = `${c.name}=${c.value}; Domain=${dom}; Path=${c.path}; ${c.secure ? 'Secure;' : ''} ${c.httpOnly ? 'HttpOnly;' : ''}`;
-    try { jar.setCookieSync(str, `https://${dom}`); } catch {}
+    try {
+      const cookie = tough.Cookie.parse(str);
+      if (cookie) {
+        jar.setCookieSync(cookie, `https://${dom}`);
+      }
+    } catch (err) {
+      // Ignore cookie parsing errors
+    }
   }
   saveJar(jar, cookieJarPath);
   await browser.close();
@@ -133,35 +140,66 @@ async function buildAxiosWithJar(jar, { timeoutMs, authToken }) {
 
   // Request interceptor: Add cookies from jar to request headers
   instance.interceptors.request.use(async (config) => {
-    const url = config.url ? (config.baseURL || '') + config.url : config.baseURL || HACKERRANK_BASE;
-    const cookies = await jar.getCookiesSync(url);
-    if (cookies.length > 0) {
-      const cookieString = cookies.map(cookie => cookie.cookieString()).join('; ');
-      config.headers.Cookie = cookieString;
+    try {
+      const url = config.url ? (config.baseURL || '') + config.url : config.baseURL || HACKERRANK_BASE;
+      const cookies = await jar.getCookies(url);
+      if (cookies && cookies.length > 0) {
+        const cookieString = cookies.map(cookie => cookie.cookieString()).join('; ');
+        config.headers.Cookie = cookieString;
+      }
+    } catch (err) {
+      // If cookie retrieval fails, continue without cookies
+      logger.warn('Failed to get cookies from jar:', err.message);
     }
     return config;
   });
 
   // Response interceptor: Extract cookies from response and store in jar
   instance.interceptors.response.use(
-    (response) => {
-      const url = response.config.url ? (response.config.baseURL || '') + response.config.url : response.config.baseURL || HACKERRANK_BASE;
-      const setCookieHeaders = response.headers['set-cookie'];
-      if (setCookieHeaders) {
-        for (const cookieHeader of setCookieHeaders) {
-          try {
-            const cookie = tough.Cookie.parse(cookieHeader);
-            if (cookie) {
-              jar.setCookieSync(cookie, url);
+    async (response) => {
+      try {
+        const url = response.config.url ? (response.config.baseURL || '') + response.config.url : response.config.baseURL || HACKERRANK_BASE;
+        const setCookieHeaders = response.headers['set-cookie'];
+        if (setCookieHeaders) {
+          for (const cookieHeader of Array.isArray(setCookieHeaders) ? setCookieHeaders : [setCookieHeaders]) {
+            try {
+              const cookie = tough.Cookie.parse(cookieHeader);
+              if (cookie) {
+                await jar.setCookie(cookie, url);
+              }
+            } catch (err) {
+              // Ignore cookie parsing errors
             }
-          } catch (err) {
-            // Ignore cookie parsing errors
           }
         }
+      } catch (err) {
+        // If cookie setting fails, continue without storing
+        logger.warn('Failed to set cookie in jar:', err.message);
       }
       return response;
     },
     (error) => {
+      // Also handle cookies in error responses
+      if (error.response && error.response.headers) {
+        try {
+          const url = error.config?.url ? (error.config.baseURL || '') + error.config.url : error.config?.baseURL || HACKERRANK_BASE;
+          const setCookieHeaders = error.response.headers['set-cookie'];
+          if (setCookieHeaders) {
+            for (const cookieHeader of Array.isArray(setCookieHeaders) ? setCookieHeaders : [setCookieHeaders]) {
+              try {
+                const cookie = tough.Cookie.parse(cookieHeader);
+                if (cookie) {
+                  jar.setCookieSync(cookie, url);
+                }
+              } catch (err) {
+                // Ignore cookie parsing errors
+              }
+            }
+          }
+        } catch (err) {
+          // Ignore cookie handling errors in error responses
+        }
+      }
       return Promise.reject(error);
     }
   );
@@ -385,7 +423,14 @@ async function fetchHackerRankData(username, opts = {}) {
   const jar = loadJar(cookieJarPath);
   if (cookie) {
     const cookieStr = cookie.includes('=') ? cookie : `hr_session=${cookie}`;
-    try { jar.setCookieSync(cookieStr, HACKERRANK_BASE); } catch {}
+    try {
+      const parsedCookie = tough.Cookie.parse(cookieStr);
+      if (parsedCookie) {
+        jar.setCookieSync(parsedCookie, HACKERRANK_BASE);
+      }
+    } catch (err) {
+      // Ignore cookie parsing errors
+    }
   }
   let axiosInstance = await buildAxiosWithJar(jar, { timeoutMs, authToken });
 
