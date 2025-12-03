@@ -6,6 +6,7 @@
  * - Routes (imported from routes directory)
  * - Error handling
  */
+require('dotenv').config();
 
 const express = require("express");
 const cors = require("cors");

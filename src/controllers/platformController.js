@@ -65,20 +65,34 @@ async function fetchPlatformData(platform, username) {
     const additionalInfo = data?.additionalInfo || data?.extras || {};
 
     // Ensure consistent data structure
-    const result = {
-      platform,
-      username: sanitizeUsername(username),
+    // Handle different data structures (GitHub vs. others)
+let result;
 
-      // ⭐ Added avatar support (for LeetCode, GitHub, CF, etc)
-      avatar: data?.avatar || null,
+if (platform === "github") {
+  result = {
+    platform,
+    username: sanitizeUsername(username),
+    profile: data?.profile || {},
+    stats: data?.stats || {},
+    badges: data?.badges || [],
+    achievements: data?.achievements || [],
+    repositories: data?.repositories || [],
+    error: data?.error,
+  };
+} else {
+  result = {
+    platform,
+    username: sanitizeUsername(username),
+    problemsSolved: data?.problemsSolved || {},
+    dailyProblemsSolved: data?.dailyProblemsSolved || {},
+    recentProblemsByDay: data?.recentProblemsByDay || {},
+    topicWiseStats: data?.topicWiseStats || {},
+    additionalInfo: data?.additionalInfo || data?.extras || {},
+    badges:data?.badges || [],
+    error: data?.error,
+  };
+}
 
-      problemsSolved: data?.problemsSolved || {},
-      dailyProblemsSolved: data?.dailyProblemsSolved || {},
-      recentProblemsByDay: data?.recentProblemsByDay || {},
-      topicWiseStats: data?.topicWiseStats || {},
-      additionalInfo,
-      error: data?.error,
-    };
 
     return result;
   } catch (error) {

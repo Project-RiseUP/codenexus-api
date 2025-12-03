@@ -1,14 +1,46 @@
-// fetchHackerRankData.js
-// npm i axios cheerio dayjs p-limit axios-cookiejar-support tough-cookie playwright
+/**
+ * HackerRank Scraper
+ * 
+ * Fetches HackerRank profile data including problems solved, submissions, and statistics
+ */
 const axios = require('axios');
 const cheerio = require('cheerio');
 const dayjs = require('dayjs');
-const pLimit = require('p-limit');
-const { wrapper } = require('axios-cookiejar-support');
 const tough = require('tough-cookie');
+const { chromium } = require('playwright');
 const fs = require('fs');
+const { logger } = require('../utils/logger');
 
 const HACKERRANK_BASE = 'https://www.hackerrank.com';
+
+/**
+ * Simple concurrency limiter
+ * Limits the number of concurrent async operations
+ * @param {number} concurrency - Maximum number of concurrent operations
+ * @returns {Function} A function that wraps async operations
+ */
+function createLimiter(concurrency) {
+  let running = 0;
+  const queue = [];
+
+  const run = async (fn) => {
+    if (running >= concurrency) {
+      await new Promise(resolve => queue.push(resolve));
+    }
+    running++;
+    try {
+      return await fn();
+    } finally {
+      running--;
+      if (queue.length > 0) {
+        const next = queue.shift();
+        next();
+      }
+    }
+  };
+
+  return run;
+}
 
 function toDateStr(input) {
   if (!input) return null;
@@ -49,7 +81,6 @@ const isAuthFail = (res) => res && !res.__error && (res.status === 401 || res.st
 
 async function loginAndRefreshCookies({ email, password, cookieJarPath, headless = true }) {
   // Headless login via Playwright; writes cookies to cookieJarPath
-  const { chromium } = require('playwright');
   const browser = await chromium.launch({ headless });
   const ctx = await browser.newContext();
   const page = await ctx.newPage();
@@ -69,13 +100,27 @@ async function loginAndRefreshCookies({ email, password, cookieJarPath, headless
   for (const c of cookies) {
     const dom = c.domain.startsWith('.') ? c.domain.slice(1) : c.domain;
     const str = `${c.name}=${c.value}; Domain=${dom}; Path=${c.path}; ${c.secure ? 'Secure;' : ''} ${c.httpOnly ? 'HttpOnly;' : ''}`;
-    try { jar.setCookieSync(str, `https://${dom}`); } catch {}
+    try {
+      const cookie = tough.Cookie.parse(str);
+      if (cookie) {
+        jar.setCookieSync(cookie, `https://${dom}`);
+      }
+    } catch (err) {
+      // Ignore cookie parsing errors
+    }
   }
   saveJar(jar, cookieJarPath);
   await browser.close();
   return true;
 }
 
+/**
+ * Create axios instance with cookie jar support
+ * Manually implements cookie jar functionality using axios interceptors
+ * @param {tough.CookieJar} jar - Cookie jar instance
+ * @param {Object} options - Configuration options
+ * @returns {axios.AxiosInstance} Axios instance with cookie support
+ */
 async function buildAxiosWithJar(jar, { timeoutMs, authToken }) {
   const headers = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36',
@@ -83,19 +128,87 @@ async function buildAxiosWithJar(jar, { timeoutMs, authToken }) {
     'Accept-Language': 'en-US,en;q=0.9',
   };
   if (authToken) headers.Authorization = `Bearer ${authToken}`;
-  return wrapper(axios.create({
+
+  const instance = axios.create({
     baseURL: HACKERRANK_BASE,
     timeout: timeoutMs,
     withCredentials: true,
-    jar,
     headers,
     maxRedirects: 5,
     validateStatus: (s) => s >= 200 && s < 400,
-  }));
+  });
+
+  // Request interceptor: Add cookies from jar to request headers
+  instance.interceptors.request.use(async (config) => {
+    try {
+      const url = config.url ? (config.baseURL || '') + config.url : config.baseURL || HACKERRANK_BASE;
+      const cookies = await jar.getCookies(url);
+      if (cookies && cookies.length > 0) {
+        const cookieString = cookies.map(cookie => cookie.cookieString()).join('; ');
+        config.headers.Cookie = cookieString;
+      }
+    } catch (err) {
+      // If cookie retrieval fails, continue without cookies
+      logger.warn('Failed to get cookies from jar:', err.message);
+    }
+    return config;
+  });
+
+  // Response interceptor: Extract cookies from response and store in jar
+  instance.interceptors.response.use(
+    async (response) => {
+      try {
+        const url = response.config.url ? (response.config.baseURL || '') + response.config.url : response.config.baseURL || HACKERRANK_BASE;
+        const setCookieHeaders = response.headers['set-cookie'];
+        if (setCookieHeaders) {
+          for (const cookieHeader of Array.isArray(setCookieHeaders) ? setCookieHeaders : [setCookieHeaders]) {
+            try {
+              const cookie = tough.Cookie.parse(cookieHeader);
+              if (cookie) {
+                await jar.setCookie(cookie, url);
+              }
+            } catch (err) {
+              // Ignore cookie parsing errors
+            }
+          }
+        }
+      } catch (err) {
+        // If cookie setting fails, continue without storing
+        logger.warn('Failed to set cookie in jar:', err.message);
+      }
+      return response;
+    },
+    (error) => {
+      // Also handle cookies in error responses
+      if (error.response && error.response.headers) {
+        try {
+          const url = error.config?.url ? (error.config.baseURL || '') + error.config.url : error.config?.baseURL || HACKERRANK_BASE;
+          const setCookieHeaders = error.response.headers['set-cookie'];
+          if (setCookieHeaders) {
+            for (const cookieHeader of Array.isArray(setCookieHeaders) ? setCookieHeaders : [setCookieHeaders]) {
+              try {
+                const cookie = tough.Cookie.parse(cookieHeader);
+                if (cookie) {
+                  jar.setCookieSync(cookie, url);
+                }
+              } catch (err) {
+                // Ignore cookie parsing errors
+              }
+            }
+          }
+        } catch (err) {
+          // Ignore cookie handling errors in error responses
+        }
+      }
+      return Promise.reject(error);
+    }
+  );
+
+  return instance;
 }
 
 async function fetchOnce(username, axiosInstance, { verbose }) {
-  const log = (...a) => verbose && console.log('[hackerrank]', ...a);
+  const log = (...a) => verbose && logger.info('[hackerrank]', ...a);
 
   const problemsSolved = { easy: 0, medium: 0, hard: 0, total: 0 };
   const dailyProblemsSolved = {};
@@ -171,7 +284,9 @@ async function fetchOnce(username, axiosInstance, { verbose }) {
       const html = pr.data;
       if (/Just a moment|cf-browser-verification|Cloudflare/i.test(html)) return { __authFail: true };
       const $ = cheerio.load(html);
-      if (!$('script').length) log('no scripts found on profile page');
+      if (!$('script').length) {
+        if (verbose) logger.warn('No scripts found on HackerRank profile page');
+      }
       $('script').each((i, s) => {
         const txt = $(s).html() || '';
         const m = txt.match(/window\.__INITIAL_STATE__\s*=\s*({[\s\S]*});?/);
@@ -220,7 +335,7 @@ async function fetchOnce(username, axiosInstance, { verbose }) {
   const uniqueSlugs = Array.from(new Set(normalizedRecent.map(r => r.slug).filter(Boolean)));
   const toFetch = uniqueSlugs.slice(0, 40);
   if (toFetch.length) {
-    const limit = pLimit(5);
+    const limit = createLimiter(5);
     const tasks = toFetch.map(slug => limit(async () => {
       const r = await safeGet(axiosInstance, `/challenges/${encodeURIComponent(slug)}`, { headers: { Accept: 'text/html' } });
       if (!r || r.__error || !r.data) return null;
@@ -308,7 +423,14 @@ async function fetchHackerRankData(username, opts = {}) {
   const jar = loadJar(cookieJarPath);
   if (cookie) {
     const cookieStr = cookie.includes('=') ? cookie : `hr_session=${cookie}`;
-    try { jar.setCookieSync(cookieStr, HACKERRANK_BASE); } catch {}
+    try {
+      const parsedCookie = tough.Cookie.parse(cookieStr);
+      if (parsedCookie) {
+        jar.setCookieSync(parsedCookie, HACKERRANK_BASE);
+      }
+    } catch (err) {
+      // Ignore cookie parsing errors
+    }
   }
   let axiosInstance = await buildAxiosWithJar(jar, { timeoutMs, authToken });
 
