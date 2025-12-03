@@ -68,6 +68,10 @@ async function fetchPlatformData(platform, username) {
     const result = {
       platform,
       username: sanitizeUsername(username),
+
+      // ⭐ Added avatar support (for LeetCode, GitHub, CF, etc)
+      avatar: data?.avatar || null,
+
       problemsSolved: data?.problemsSolved || {},
       dailyProblemsSolved: data?.dailyProblemsSolved || {},
       recentProblemsByDay: data?.recentProblemsByDay || {},
@@ -121,4 +125,3 @@ module.exports = {
   getSupportedPlatforms,
   sanitizeUsername,
 };
-
