@@ -154,14 +154,18 @@ async function fetchLeetCodeData(username) {
       });
     });
 
-    // additional info
-    const additionalInfo = {
+    // Profile data
+    const profile = {
       avatar: user.profile?.userAvatar || null,
-      realName: user.profile?.realName || null,
-      ranking: user.profile?.ranking || null,
+      name: user.profile?.realName || null,
+      username: username,
       about: user.profile?.aboutMe || null,
+      ranking: user.profile?.ranking || null,
       reputation: user.profile?.reputation || null
     };
+
+    // Additional info (only unique data not in profile)
+    const additionalInfo = {};
 
     // Get badges from API
     const badges = (user.badges || []).map(badge => ({
@@ -170,15 +174,16 @@ async function fetchLeetCodeData(username) {
       icon: badge.icon || null
     }));
 
-    // FINAL RESPONSE
+    // FINAL RESPONSE - matching platformController.js format
     return {
       username,
+      profile,
       problemsSolved,
       dailyProblemsSolved,
       recentProblemsByDay,
       topicWiseStats,
-      badges,
-      additionalInfo
+      additionalInfo,
+      badges
     };
   } catch (err) {
     return {

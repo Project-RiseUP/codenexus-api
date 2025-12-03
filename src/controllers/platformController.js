@@ -72,8 +72,6 @@ async function fetchPlatformData(platform, username) {
       };
     } else {
       result = {
-        platform,
-        username: sanitizeUsername(username),
         profile: data?.profile || {},
         problemsSolved: data?.problemsSolved || {},
         dailyProblemsSolved: data?.dailyProblemsSolved || {},

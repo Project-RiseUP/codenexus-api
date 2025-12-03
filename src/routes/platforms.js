@@ -108,8 +108,11 @@ router.post('/api/v1/platforms/:platform/profiles', async (req, res) => {
   try {
     const data = await fetchPlatformData(platform.toLowerCase(), username);
     
+    // Check if there's an error in the data (e.g., user not found)
+    const hasError = data?.error || false;
+    
     res.json({
-      success: true,
+      success: !hasError,
       platform: platform.toLowerCase(),
       username,
       data,
