@@ -41,6 +41,12 @@ query userData($username: String!) {
     userCalendar {
       submissionCalendar
     }
+    badges {
+      id
+      displayName
+      icon
+      category
+    }
   }
 
   recentAcSubmissionList(username: $username) {
@@ -101,9 +107,6 @@ async function fetchLeetCodeData(username) {
       return { error: "LeetCode user not found", username };
     }
 
-    // Avatar
-    const avatar = user.profile?.userAvatar || null;
-
     // Problems solved
     const problemsSolved = {};
     (user.submitStats?.acSubmissionNum || []).forEach((s) => {
@@ -153,20 +156,28 @@ async function fetchLeetCodeData(username) {
 
     // additional info
     const additionalInfo = {
+      avatar: user.profile?.userAvatar || null,
       realName: user.profile?.realName || null,
       ranking: user.profile?.ranking || null,
       about: user.profile?.aboutMe || null,
       reputation: user.profile?.reputation || null
     };
 
+    // Get badges from API
+    const badges = (user.badges || []).map(badge => ({
+      title: badge.displayName || badge.id,
+      type: badge.category || "achievement",
+      icon: badge.icon || null
+    }));
+
     // FINAL RESPONSE
     return {
       username,
-      avatar,
       problemsSolved,
       dailyProblemsSolved,
       recentProblemsByDay,
       topicWiseStats,
+      badges,
       additionalInfo
     };
   } catch (err) {
