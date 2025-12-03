@@ -75,6 +75,7 @@ async function fetchPlatformData(platform, username) {
         profile: data?.profile || {},
         problemsSolved: data?.problemsSolved || {},
         dailyProblemsSolved: data?.dailyProblemsSolved || {},
+        contestStats: data?.contestStats || {},
         recentProblemsByDay: data?.recentProblemsByDay || {},
         topicWiseStats: data?.topicWiseStats || {},
         additionalInfo: data?.additionalInfo || data?.extras || {},
