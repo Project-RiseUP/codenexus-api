@@ -1,10 +1,37 @@
-const axios = require('axios');
+const axios = require("axios");
 
-const LEETCODE_GRAPHQL = 'https://leetcode.com/graphql';
+const GRAPHQL = "https://leetcode.com/graphql";
 
-const PROFILE_QUERY = `
-query getUserProfile($username: String!) {
+// Morgan-style logging
+function httpLog(method, url, status, ms) {
+  console.log(`${method} ${url} ${status} - ${ms}ms`);
+}
+
+async function timedRequest(requestFn, method, url) {
+  const start = Date.now();
+  try {
+    const res = await requestFn();
+    httpLog(method, url, res.status, Date.now() - start);
+    return res;
+  } catch (err) {
+    const status = err.response?.status || 500;
+    httpLog(method, url, status, Date.now() - start);
+    return { data: {}, status };
+  }
+}
+
+// Fast profile + calendar + recent submissions
+const PROFILE_COMBINED_QUERY = `
+query userData($username: String!) {
   matchedUser(username: $username) {
+    username
+    profile {
+      userAvatar
+      realName
+      aboutMe
+      ranking
+      reputation
+    }
     submitStats {
       acSubmissionNum {
         difficulty
@@ -13,45 +40,24 @@ query getUserProfile($username: String!) {
     }
     userCalendar {
       submissionCalendar
-      streak
-      totalActiveDays
     }
-  }
-}`;
-
-const BADGES_QUERY = `
-query userBadges($username: String!) {
-  matchedUser(username: $username) {
     badges {
       id
-      name
-      shortName
       displayName
       icon
-      hoverText
-      medal {
-        slug
-        config {
-          iconGif
-          iconGifBackground
-        }
-      }
-      creationDate
       category
     }
   }
-}
-`;
 
-const RECENT_AC_QUERY = `
-query recentAcSubmissions($username: String!) {
   recentAcSubmissionList(username: $username) {
     title
     titleSlug
     timestamp
   }
-}`;
+}
+`;
 
+// Direct per-problem tag query (from your base code)
 const QUESTION_TAGS_QUERY = `
 query questionData($titleSlug: String!) {
   question(titleSlug: $titleSlug) {
@@ -59,109 +65,112 @@ query questionData($titleSlug: String!) {
       name
     }
   }
-}`;
+}
+`;
+
+async function fetchTagsInParallel(slugs) {
+  const tagFetchers = slugs.map((slug) =>
+    axios
+      .post(GRAPHQL, {
+        query: QUESTION_TAGS_QUERY,
+        variables: { titleSlug: slug }
+      })
+      .then((res) => ({
+        slug,
+        tags: res.data?.data?.question?.topicTags || []
+      }))
+      .catch(() => ({ slug, tags: [] }))
+  );
+
+  return Promise.all(tagFetchers);
+}
 
 async function fetchLeetCodeData(username) {
-  if (!username) return { error: 'Username is required' };
-
-  const headers = { 'Content-Type': 'application/json' };
+  if (!username) return { error: "Username is required" };
 
   try {
-    // Step 1: Profile
-    const profilePayload = {
-      query: PROFILE_QUERY,
-      variables: { username },
-    };
+    // 1️⃣ FAST GRAPHQL CALL
+    const graphQLRes = await timedRequest(
+      () =>
+        axios.post(GRAPHQL, {
+          query: PROFILE_COMBINED_QUERY,
+          variables: { username }
+        }),
+      "POST",
+      `${GRAPHQL} (profile+calendar+recent)`
+    );
 
-    const profileRes = await axios.post(LEETCODE_GRAPHQL, profilePayload, { headers });
-    const userData = profileRes.data?.data?.matchedUser;
+    const data = graphQLRes.data?.data;
+    const user = data?.matchedUser;
 
-    if (!userData) return { error: 'LeetCode user not found' };
-
-    const problemsSolved = {};
-    for (const item of userData.submitStats.acSubmissionNum) {
-      problemsSolved[item.difficulty] = item.count;
+    if (!user) {
+      return { error: "LeetCode user not found", username };
     }
 
-    const calendarRaw = JSON.parse(userData.userCalendar.submissionCalendar || '{}');
+    // Problems solved
+    const problemsSolved = {};
+    (user.submitStats?.acSubmissionNum || []).forEach((s) => {
+      problemsSolved[s.difficulty] = s.count;
+    });
+
+    // Submission calendar
+    const calendarRaw = user.userCalendar?.submissionCalendar || "{}";
+    let calendar = {};
+    try {
+      calendar = JSON.parse(calendarRaw);
+    } catch {}
+
     const dailyProblemsSolved = {};
-    for (const [timestamp, count] of Object.entries(calendarRaw)) {
-      const date = new Date(parseInt(timestamp) * 1000).toISOString().split('T')[0];
+    for (const [ts, count] of Object.entries(calendar)) {
+      const date = new Date(ts * 1000).toISOString().split("T")[0];
       dailyProblemsSolved[date] = count;
     }
 
-    // Step 2: Recent Submissions
-    const recentPayload = {
-      query: RECENT_AC_QUERY,
-      variables: { username },
-    };
-
-    const recentRes = await axios.post(LEETCODE_GRAPHQL, recentPayload, { headers });
-    const recentSubs = recentRes.data?.data?.recentAcSubmissionList || [];
-
+    // Recent submissions
+    const recent = data?.recentAcSubmissionList || [];
     const recentProblemsByDay = {};
-    const topicWiseStats = {};
+    const recentSlugs = [];
 
-    for (const sub of recentSubs) {
-      const { title, titleSlug, timestamp } = sub;
-      const date = new Date(parseInt(timestamp) * 1000).toISOString().split('T')[0];
+    for (const sub of recent) {
+      const date = new Date(sub.timestamp * 1000)
+        .toISOString()
+        .split("T")[0];
 
       if (!recentProblemsByDay[date]) recentProblemsByDay[date] = [];
-      recentProblemsByDay[date].push(title);
+      recentProblemsByDay[date].push(sub.title);
 
-      // Step 3: Tags for each recent problem
-      const tagPayload = {
-        query: QUESTION_TAGS_QUERY,
-        variables: { titleSlug },
-      };
-
-      const tagRes = await axios.post(LEETCODE_GRAPHQL, tagPayload, { headers });
-      const tags = tagRes.data?.data?.question?.topicTags || [];
-
-      for (const tag of tags) {
-        const tagName = tag.name;
-        topicWiseStats[tagName] = (topicWiseStats[tagName] || 0) + 1;
-      }
+      recentSlugs.push(sub.titleSlug);
     }
 
-    // Step 4: Badges
-    let badges = [];
-    
-    try {
-      const badgesPayload = {
-        query: BADGES_QUERY,
-        variables: { username },
-        operationName: 'userBadges'  // Important!
-      };
+    // 2️⃣ Fetch tags in PARALLEL (old working method)
+    const tagResults = await fetchTagsInParallel(recentSlugs);
 
-      const badgesRes = await axios.post(LEETCODE_GRAPHQL, badgesPayload, { headers });
-      
-      if (badgesRes.data?.errors) {
-        console.error('GraphQL Badges Error:', JSON.stringify(badgesRes.data.errors));
-      } else {
-        const matchedUser = badgesRes.data?.data?.matchedUser;
-        
-        if (matchedUser) {
-          const earnedBadges = (matchedUser.badges || [])
-            .filter(badge => badge.creationDate)
-            .map(badge => ({
-              id: badge.id,
-              name: badge.name || badge.displayName || badge.shortName,
-              displayName: badge.displayName,
-              icon: badge.icon,
-              category: badge.category || 'Other',
-              creationDate: badge.creationDate,
-              hoverText: badge.hoverText
-            }));
-          
-          badges = earnedBadges;
-          console.log(`Successfully fetched ${badges.length} badges for ${username}`);
-        }
-      }
-    } catch (badgeError) {
-      console.error('Badge fetch error:', badgeError.message);
-    }
+    // topicWiseStats (accurate from old logic)
+    const topicWiseStats = {};
+    tagResults.forEach(({ tags }) => {
+      tags.forEach((tag) => {
+        const name = tag.name;
+        topicWiseStats[name] = (topicWiseStats[name] || 0) + 1;
+      });
+    });
 
+    // additional info
+    const additionalInfo = {
+      avatar: user.profile?.userAvatar || null,
+      realName: user.profile?.realName || null,
+      ranking: user.profile?.ranking || null,
+      about: user.profile?.aboutMe || null,
+      reputation: user.profile?.reputation || null
+    };
+
+    // Get badges from API
+    const badges = (user.badges || []).map(badge => ({
+      title: badge.displayName || badge.id,
+      type: badge.category || "achievement",
+      icon: badge.icon || null
+    }));
+
+    // FINAL RESPONSE
     return {
       username,
       problemsSolved,
@@ -169,10 +178,13 @@ async function fetchLeetCodeData(username) {
       recentProblemsByDay,
       topicWiseStats,
       badges,
+      additionalInfo
     };
   } catch (err) {
-    console.error('Full error:', err.response?.data || err.message);
-    return { error: 'Internal server error', detail: err.message };
+    return {
+      error: "Internal server error",
+      detail: err.response?.data || err.message
+    };
   }
 }
 
