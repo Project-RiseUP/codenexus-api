@@ -20,7 +20,7 @@ async function timedRequest(requestFn, method, url) {
   }
 }
 
-// Fast profile + calendar + recent submissions
+// Combined query: profile + calendar + recent submissions + contest data
 const PROFILE_COMBINED_QUERY = `
 query userData($username: String!) {
   matchedUser(username: $username) {
@@ -49,10 +49,42 @@ query userData($username: String!) {
     }
   }
 
-  recentAcSubmissionList(username: $username) {
+  recentAcSubmissionList(username: $username, limit: 20) {
     title
     titleSlug
     timestamp
+    statusDisplay
+    lang
+    runtime
+    memory
+    url
+    isPending
+  }
+
+  userContestRanking(username: $username) {
+    attendedContestsCount
+    rating
+    globalRanking
+    totalParticipants
+    topPercentage
+    badge {
+      name
+      icon
+    }
+  }
+
+  userContestRankingHistory(username: $username) {
+    attended
+    rating
+    ranking
+    trendDirection
+    problemsSolved
+    totalProblems
+    finishTimeInSeconds
+    contest {
+      title
+      startTime
+    }
   }
 }
 `;
@@ -89,7 +121,7 @@ async function fetchLeetCodeData(username) {
   if (!username) return { error: "Username is required" };
 
   try {
-    // 1️⃣ FAST GRAPHQL CALL
+    // 1️⃣ SINGLE COMBINED GRAPHQL CALL (profile + contest data)
     const graphQLRes = await timedRequest(
       () =>
         axios.post(GRAPHQL, {
@@ -97,14 +129,58 @@ async function fetchLeetCodeData(username) {
           variables: { username }
         }),
       "POST",
-      `${GRAPHQL} (profile+calendar+recent)`
+      `${GRAPHQL} (profile+calendar+recent+contest)`
     );
+
+    // Check for GraphQL errors in response
+    if (graphQLRes.data?.errors) {
+      console.error("GraphQL Errors:", JSON.stringify(graphQLRes.data.errors, null, 2));
+      const errorMessages = graphQLRes.data.errors.map(e => e.message).join(", ");
+      return { 
+        error: "GraphQL query error", 
+        detail: errorMessages,
+        errors: graphQLRes.data.errors,
+        username 
+      };
+    }
 
     const data = graphQLRes.data?.data;
     const user = data?.matchedUser;
 
     if (!user) {
       return { error: "LeetCode user not found", username };
+    }
+
+    // Handle contest data from the same response
+    let contestRanking = null;
+    let contestHistory = [];
+    
+    if (data?.userContestRanking) {
+      contestRanking = {
+        attendedContestsCount: data.userContestRanking.attendedContestsCount || 0,
+        rating: data.userContestRanking.rating || 0,
+        globalRanking: data.userContestRanking.globalRanking || 0,
+        totalParticipants: data.userContestRanking.totalParticipants || 0,
+        topPercentage: data.userContestRanking.topPercentage || 0,
+        badge: data.userContestRanking.badge?.name || null,
+        badgeIcon: data.userContestRanking.badge?.icon || null
+      };
+    }
+
+    // Filter to only include contests where user participated (attended = true)
+    if (data?.userContestRankingHistory) {
+      contestHistory = (data.userContestRankingHistory || [])
+        .filter(contest => contest.attended === true)
+        .map(contest => ({
+          rating: contest.rating || 0,
+          ranking: contest.ranking || 0,
+          trendDirection: contest.trendDirection || null,
+          problemsSolved: contest.problemsSolved || 0,
+          totalProblems: contest.totalProblems || 0,
+          finishTimeInSeconds: contest.finishTimeInSeconds || 0,
+          contestTitle: contest.contest?.title || null,
+          contestStartTime: contest.contest?.startTime || null
+        }));
     }
 
     // Problems solved
@@ -126,7 +202,7 @@ async function fetchLeetCodeData(username) {
       dailyProblemsSolved[date] = count;
     }
 
-    // Recent submissions
+    // Recent submissions with detailed information
     const recent = data?.recentAcSubmissionList || [];
     const recentProblemsByDay = {};
     const recentSlugs = [];
@@ -137,7 +213,19 @@ async function fetchLeetCodeData(username) {
         .split("T")[0];
 
       if (!recentProblemsByDay[date]) recentProblemsByDay[date] = [];
-      recentProblemsByDay[date].push(sub.title);
+      
+      // Store detailed problem information
+      recentProblemsByDay[date].push({
+        title: sub.title,
+        titleSlug: sub.titleSlug,
+        timestamp: sub.timestamp,
+        status: sub.statusDisplay || "Unknown",
+        language: sub.lang || null,
+        runtime: sub.runtime || null,
+        memory: sub.memory || null,
+        url: sub.url || null,
+        isPending: sub.isPending || false
+      });
 
       recentSlugs.push(sub.titleSlug);
     }
@@ -154,14 +242,18 @@ async function fetchLeetCodeData(username) {
       });
     });
 
-    // additional info
-    const additionalInfo = {
+    // Profile data
+    const profile = {
       avatar: user.profile?.userAvatar || null,
-      realName: user.profile?.realName || null,
-      ranking: user.profile?.ranking || null,
+      name: user.profile?.realName || null,
+      username: username,
       about: user.profile?.aboutMe || null,
+      ranking: user.profile?.ranking || null,
       reputation: user.profile?.reputation || null
     };
+
+    // Additional info (only unique data not in profile)
+    const additionalInfo = {};
 
     // Get badges from API
     const badges = (user.badges || []).map(badge => ({
@@ -170,15 +262,29 @@ async function fetchLeetCodeData(username) {
       icon: badge.icon || null
     }));
 
-    // FINAL RESPONSE
+    // Contest statistics - all contest data in one object
+    const contestStats = {
+      currentRating: contestRanking?.rating || 0,
+      globalRanking: contestRanking?.globalRanking || 0,
+      attendedContestsCount: contestRanking?.attendedContestsCount || 0,
+      topPercentage: contestRanking?.topPercentage || 0,
+      badge: contestRanking?.badge || null,
+      badgeIcon: contestRanking?.badgeIcon || null,
+      history: contestHistory,
+      totalContests: contestHistory.length
+    };
+
+    // FINAL RESPONSE - matching platformController.js format
     return {
       username,
+      profile,
       problemsSolved,
       dailyProblemsSolved,
       recentProblemsByDay,
       topicWiseStats,
+      additionalInfo,
       badges,
-      additionalInfo
+      contestStats
     };
   } catch (err) {
     return {

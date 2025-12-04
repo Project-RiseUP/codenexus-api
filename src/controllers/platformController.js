@@ -1,6 +1,6 @@
 /**
  * Platform Controller
- * 
+ *
  * Business logic for fetching platform data
  * Handles data aggregation and transformation
  */
@@ -16,15 +16,6 @@ const { logger } = require("../utils/logger");
 // Utility to sanitize username
 const sanitizeUsername = (username) => String(username || "").trim();
 
-// CodeChef wrapper with cookie support
-async function fetchCodeChefDataWrapped(username) {
-  const CODECHEF_COOKIE = process.env.CODECHEF_COOKIE || "";
-  return fetchCodeChefData(sanitizeUsername(username), {
-    cookie: CODECHEF_COOKIE,
-    timeout: 20000,
-  });
-}
-
 // Platform fetchers mapping
 const platformFetchers = {
   github: fetchGitHubData,
@@ -32,7 +23,7 @@ const platformFetchers = {
   geeksforgeeks: fetchGFGData,
   codeforces: fetchCodeforcesData,
   hackerrank: (u) => fetchHackerRankData(sanitizeUsername(u)),
-  codechef: (u) => fetchCodeChefDataWrapped(u),
+  codechef: (u) => fetchCodeChefData(sanitizeUsername(u)),
 };
 
 /**
@@ -43,7 +34,7 @@ const platformFetchers = {
  */
 async function fetchPlatformData(platform, username) {
   const fetchFunc = platformFetchers[platform.toLowerCase()];
-  
+
   if (!fetchFunc) {
     const error = new Error(`Unsupported platform: ${platform}`);
     logger.error(`Unsupported platform: ${platform} for user ${username}`);
@@ -51,7 +42,7 @@ async function fetchPlatformData(platform, username) {
   }
 
   const startTime = Date.now();
-  
+
   try {
     const data = await fetchFunc(sanitizeUsername(username));
     const duration = Date.now() - startTime;
@@ -66,37 +57,38 @@ async function fetchPlatformData(platform, username) {
 
     // Ensure consistent data structure
     // Handle different data structures (GitHub vs. others)
-let result;
+    let result;
 
-if (platform === "github") {
-  result = {
-    platform,
-    username: sanitizeUsername(username),
-    profile: data?.profile || {},
-    stats: data?.stats || {},
-    badges: data?.badges || [],
-    achievements: data?.achievements || [],
-    repositories: data?.repositories || [],
-    error: data?.error,
-  };
-} else {
-  result = {
-    platform,
-    username: sanitizeUsername(username),
-    problemsSolved: data?.problemsSolved || {},
-    dailyProblemsSolved: data?.dailyProblemsSolved || {},
-    recentProblemsByDay: data?.recentProblemsByDay || {},
-    topicWiseStats: data?.topicWiseStats || {},
-    additionalInfo: data?.additionalInfo || data?.extras || {},
-    badges:data?.badges || [],
-    error: data?.error,
-  };
-}
-
+    if (platform === "github") {
+      result = {
+        platform,
+        username: sanitizeUsername(username),
+        profile: data?.profile || {},
+        stats: data?.stats || {},
+        badges: data?.badges || [],
+        achievements: data?.achievements || [],
+        repositories: data?.repositories || [],
+        error: data?.error,
+      };
+    } else {
+      result = {
+        profile: data?.profile || {},
+        problemsSolved: data?.problemsSolved || {},
+        dailyProblemsSolved: data?.dailyProblemsSolved || {},
+        contestStats: data?.contestStats || {},
+        recentProblemsByDay: data?.recentProblemsByDay || {},
+        topicWiseStats: data?.topicWiseStats || {},
+        additionalInfo: data?.additionalInfo || data?.extras || {},
+        badges: data?.badges || [],
+        error: data?.error,
+      };
+    }
 
     return result;
   } catch (error) {
-    logger.error(`Failed to fetch ${platform} for ${username}: ${error.message}`);
+    logger.error(
+      `Failed to fetch ${platform} for ${username}: ${error.message}`
+    );
     throw new Error(`Error fetching ${platform} data: ${error.message}`);
   }
 }
@@ -108,17 +100,17 @@ if (platform === "github") {
  */
 async function fetchAllPlatforms(username) {
   const cleaned = sanitizeUsername(username);
-  
+
   const platforms = Object.keys(platformFetchers);
   const results = await Promise.allSettled(
-    platforms.map(platform => fetchPlatformData(platform, cleaned))
+    platforms.map((platform) => fetchPlatformData(platform, cleaned))
   );
 
   const response = results.reduce((acc, result, index) => {
     const platform = platforms[index];
-    acc[platform] = result.status === 'fulfilled'
-      ? result.value
-      : { error: result.reason.message };
+    acc[platform] = result.status === "fulfilled"
+        ? result.value
+        : { error: result.reason.message };
     return acc;
   }, {});
 
